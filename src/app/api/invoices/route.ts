@@ -1,19 +1,25 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/lib/db';
-import { requireAuth, requireAdmin, getUserDeveloperId, unauthorizedResponse, forbiddenResponse } from '@/lib/auth';
-import type { Invoice, MonthlyFinancials } from '@/types';
+import { NextRequest, NextResponse } from "next/server";
+import { db } from "@/lib/db";
+import {
+  requireAuth,
+  requireAdmin,
+  getUserDeveloperId,
+  unauthorizedResponse,
+  forbiddenResponse,
+} from "@/lib/auth";
+import type { Invoice, MonthlyFinancials } from "@/types";
 
 export async function GET(request: NextRequest) {
   try {
     const user = await requireAuth();
     const { searchParams } = new URL(request.url);
-    const month = searchParams.get('month');
-    const engagementId = searchParams.get('engagementId');
+    const month = searchParams.get("month");
+    const engagementId = searchParams.get("engagementId");
 
-    let query = db.from('invoices').select('*');
-    
+    let query = db.from("invoices").select("*");
+
     // If user is not admin, filter by their developer's engagements
-    if (user.role !== 'admin') {
+    if (user.role !== "admin") {
       const developerId = await getUserDeveloperId(user.id);
       if (!developerId) {
         // User has no developer profile, return empty array
@@ -21,26 +27,28 @@ export async function GET(request: NextRequest) {
       }
       // Get engagements for this developer
       const { data: engagements } = await db
-        .from('engagements')
-        .select('id')
-        .eq('developer_id', developerId);
-      
+        .from("engagements")
+        .select("id")
+        .eq("developer_id", developerId);
+
       if (!engagements || engagements.length === 0) {
         return NextResponse.json([]);
       }
-      
-      const engagementIds = engagements.map(e => e.id);
-      query = query.in('engagement_id', engagementIds);
+
+      const engagementIds = engagements.map((e) => e.id);
+      query = query.in("engagement_id", engagementIds);
     }
 
     if (month) {
-      query = query.eq('month', month);
+      query = query.eq("month", month);
     }
     if (engagementId) {
-      query = query.eq('engagement_id', engagementId);
+      query = query.eq("engagement_id", engagementId);
     }
 
-    query = query.order('month', { ascending: false }).order('created_at', { ascending: false });
+    query = query
+      .order("month", { ascending: false })
+      .order("created_at", { ascending: false });
 
     const { data, error } = await query;
     if (error) throw error;
@@ -65,10 +73,13 @@ export async function GET(request: NextRequest) {
     })) as Invoice[];
     return NextResponse.json(invoices);
   } catch (error: any) {
-    if (error.message === 'Unauthorized') {
+    if (error.message === "Unauthorized") {
       return unauthorizedResponse();
     }
-    return NextResponse.json({ error: 'Failed to fetch invoices' }, { status: 500 });
+    return NextResponse.json(
+      { error: "Failed to fetch invoices" },
+      { status: 500 },
+    );
   }
 }
 
@@ -78,24 +89,31 @@ export async function POST(request: NextRequest) {
     await requireAdmin();
     const invoice: Invoice = await request.json();
     // Use upsert to handle INSERT OR REPLACE behavior
-    const { data, error } = await db.from('invoices').upsert({
-      id: invoice.id,
-      engagement_id: invoice.engagementId,
-      month: invoice.month,
-      approved_days: invoice.approvedDays,
-      credit_days: invoice.creditDays,
-      billable_deduction_days: invoice.billableDeductionDays,
-      section2_client_invoice: invoice.section2ClientInvoice,
-      section3_dev_pay: invoice.section3DevPay,
-      section1_company_net: invoice.section1CompanyNet,
-      price_per_period: invoice.pricePerPeriod,
-      salary_per_period: invoice.salaryPerPeriod,
-      client_dayoff_rate: invoice.clientDayoffRate,
-      dev_dayoff_rate: invoice.devDayoffRate,
-      period_unit: invoice.periodUnit,
-      currency: invoice.currency,
-      created_at: invoice.createdAt,
-    }, { onConflict: 'engagement_id,month' }).select().single();
+    const { data, error } = await db
+      .from("invoices")
+      .upsert(
+        {
+          id: invoice.id,
+          engagement_id: invoice.engagementId,
+          month: invoice.month,
+          approved_days: invoice.approvedDays,
+          credit_days: invoice.creditDays,
+          billable_deduction_days: invoice.billableDeductionDays,
+          section2_client_invoice: invoice.section2ClientInvoice,
+          section3_dev_pay: invoice.section3DevPay,
+          section1_company_net: invoice.section1CompanyNet,
+          price_per_period: invoice.pricePerPeriod,
+          salary_per_period: invoice.salaryPerPeriod,
+          client_dayoff_rate: invoice.clientDayoffRate,
+          dev_dayoff_rate: invoice.devDayoffRate,
+          period_unit: invoice.periodUnit,
+          currency: invoice.currency,
+          created_at: invoice.createdAt,
+        },
+        { onConflict: "engagement_id,month" },
+      )
+      .select()
+      .single();
     if (error) throw error;
     // Map back to camelCase
     return NextResponse.json({
@@ -117,27 +135,15 @@ export async function POST(request: NextRequest) {
       createdAt: data.created_at,
     } as Invoice);
   } catch (error: any) {
-    if (error.message === 'Unauthorized') {
+    if (error.message === "Unauthorized") {
       return unauthorizedResponse();
     }
-    if (error.message === 'Forbidden') {
+    if (error.message === "Forbidden") {
       return forbiddenResponse();
     }
-    return NextResponse.json({ error: 'Failed to create invoice' }, { status: 500 });
+    return NextResponse.json(
+      { error: "Failed to create invoice" },
+      { status: 500 },
+    );
   }
 }
-
-// Helper function to convert Invoice to MonthlyFinancials
-export function invoiceToMonthlyFinancials(invoice: Invoice): MonthlyFinancials {
-  return {
-    engagementId: invoice.engagementId,
-    month: invoice.month,
-    approvedDays: invoice.approvedDays,
-    creditDays: invoice.creditDays,
-    billableDeductionDays: invoice.billableDeductionDays,
-    section2ClientInvoice: invoice.section2ClientInvoice,
-    section3DevPay: invoice.section3DevPay,
-    section1CompanyNet: invoice.section1CompanyNet,
-  };
-}
-
